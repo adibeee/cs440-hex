@@ -1,0 +1,12 @@
+src/labs/routing/agents/DFSMazeAgent.java
+src/labs/routing/agents/BFSMazeAgent.java
+src/labs/routing/agents/DijkstraMazeAgent.java
+
+
+# tests
+tests/labs/routing/states/StateRepository.java
+tests/labs/routing/agents/BFSMazeAgentTests.java
+# tests/labs/routing/agents/DFSMazeAgentTests.java
+# tests/labs/routing/agents/DijkstraMazeAgentTests.java
+tests/labs/routing/RunAllTests.java
+
