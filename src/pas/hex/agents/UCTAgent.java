@@ -55,10 +55,14 @@ import java.util.Set;
  */
 public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
 
-    private static final double C = Math.sqrt(1);
+    private static final double C = Math.sqrt(2);
     private final int myPlayerId;
     private final long thinkingTimeInMs;
     private final Agent[] proxyAgents;
+
+    private static class RolloutParams extends Node.ExtraParams {
+        Action firstAction;
+    }
 
     public UCTAgent(final int agentId, final long maxThinkingTimeInMs) {
         super(agentId, maxThinkingTimeInMs);
@@ -91,11 +95,9 @@ public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
         //       a child who'se "worth it score" (defined by the Upper-Confidence Bound) is maximized.
        ATPZSQNode node = rootNode;
         while (!node.isTerminal()) {
-        // untried move left -> this is the artificial leaf
         if (node.getChildList().size() < node.getState().getNumActions()) {
             return node;
         }
-        // otherwise move to the child with the best UCB score
         ATPZSQNode bestChild = null;
         double bestScore = Double.NEGATIVE_INFINITY;
         for (Node c : node.getChildList()) {
@@ -103,7 +105,7 @@ public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
             Action action = child.getLastAction();
             double q = node.getAverageQValue(action);
             if (node.getPlayerType() != ATPZSNode.PlayerType.MAXIMIZING_PLAYER) {
-                q = -q;   // opponent wants LOW values
+                q = -q;   
             }
             double score = q + C * Math.sqrt(Math.log(node.getNumSamples()) / node.getNumSamples(action));
             if (score > bestScore) {
@@ -125,17 +127,24 @@ public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
         //       explored in order for this node to have been picked as the artificial leaf node than you need
         //       to choose one of the unexplored actions!
         for (Action action : artificialLeafNode.getState().getActions()) {
-        if (artificialLeafNode.getNumSamples(action) == 0) {
+        boolean cached = false;
+        for (Node c : artificialLeafNode.getChildList()) {
+            if (c.getLastAction().equals(action)) {
+                cached = true;
+                break;
+            }
+        }
+        if (!cached) {
             try {
                 ATPZSQNode child = (ATPZSQNode) artificialLeafNode.getChild(action);
-                artificialLeafNode.addChild(child);   // cache it
+                artificialLeafNode.addChild(child);
                 return child;
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         }
-        }
-        return null;
+    }
+    return null;
     }
 
     /**
@@ -153,7 +162,13 @@ public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
         }
         try {
             GenericGame game = leafNode.getState().getMutableInstance(proxyAgents);
-            return game.playUntilCompletion().getTerminalUtility(myPlayerId);
+            Action first = game.getCurrentAgentAction();
+
+            RolloutParams params = new RolloutParams();
+            params.firstAction = first;
+            leafNode.setExtraParams(params);
+
+            return game.apply(first).playUntilCompletion().getTerminalUtility(myPlayerId);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -166,6 +181,12 @@ public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
     public void backupStatistics(final ATPZSQNode leafNode, double rolloutOutcomeUtility) {
         // TODO: walk back up the path from your new leaf to the root updating statistics for each node in the path
         //       on the way. See {@link ATPZSMCTSAgent}'s documentation on this.
+        Node.ExtraParams p = leafNode.getExtraParams();
+        if (p instanceof RolloutParams) {
+            leafNode.addSample(((RolloutParams) p).firstAction, rolloutOutcomeUtility);
+            leafNode.setExtraParams(null);   
+        }
+
         ATPZSQNode node = leafNode;
         while (node.getParent() != null) {
             ATPZSQNode parent = (ATPZSQNode) node.getParent();
@@ -199,16 +220,15 @@ public class UCTAgent extends ATPZSMCTSAgent<ATPZSQNode> {
             backupStatistics(child, utility);
         }
 
-        // play the most-visited move
         ATPZSQNode bestChild = null;
-        int mostVisits = -1;
+        double bestQ = Double.NEGATIVE_INFINITY;
         for (Node c : rootNode.getChildList()) {
-            int visits = rootNode.getNumSamples(c.getLastAction());
-            if (visits > mostVisits) {
-                mostVisits = visits;
+            double q = rootNode.getAverageQValue(c.getLastAction());
+            if (q > bestQ) {
+                bestQ = q;
                 bestChild = (ATPZSQNode) c;
             }
         }
         return bestChild;
-        }
+    }
 }
